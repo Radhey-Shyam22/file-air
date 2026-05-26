@@ -21,6 +21,14 @@ export default function DownloadSection({ initialKey = "", onDownloadExecuted }:
   const [timeRemaining, setTimeRemaining] = useState<string>("");
   const lookupRef = useRef<string>("");
 
+  // Real-time transfer download states
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadSpeed, setDownloadSpeed] = useState(0);
+  const [downloadedBytes, setDownloadedBytes] = useState(0);
+  const [downloadEta, setDownloadEta] = useState<string>("");
+  const downloadXhrRef = useRef<XMLHttpRequest | null>(null);
+
   // Handle auto-searching if initialKey is supplied
   useEffect(() => {
     if (initialKey) {
@@ -88,25 +96,107 @@ export default function DownloadSection({ initialKey = "", onDownloadExecuted }:
 
   const handleDownload = () => {
     if (!fileDetails) return;
-    
-    // Redirect browser directly to the download endpoint which serves a Content-Disposition attachment stream
-    window.location.href = `/api/download/${fileDetails.key}`;
-    
-    // Notify parent component so they can trigger global data updates / stat refreshes
-    onDownloadExecuted();
 
-    // If marked as single-use download, the backend destroys the record immediately.
-    // Let's reset the download UI shortly as the link was consumed
-    if (fileDetails.singleUse) {
-      setTimeout(() => {
-        setFileDetails(null);
-        setKeyInput("");
-        setError("File transfer complete. Single-use package successfully consumed & destroyed from storage.");
-      }, 3000);
+    setIsDownloading(true);
+    setDownloadProgress(0);
+    setDownloadedBytes(0);
+    setDownloadSpeed(0);
+    setDownloadEta("");
+    setError(null);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", `/api/download/${fileDetails.key}`, true);
+    xhr.responseType = "blob";
+
+    const startTime = Date.now();
+    downloadXhrRef.current = xhr;
+
+    xhr.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const loaded = event.loaded;
+        const total = event.total;
+        const progress = Math.round((loaded / total) * 100);
+
+        const currentTime = Date.now();
+        const elapsedTime = (currentTime - startTime) / 1000; // in seconds
+
+        let speed = 0;
+        let etaStr = "";
+        if (elapsedTime > 0) {
+          speed = loaded / elapsedTime;
+          const remainingBytes = total - loaded;
+          if (speed > 0) {
+            const remainingTimeInSeconds = remainingBytes / speed;
+            if (remainingTimeInSeconds < 60) {
+              etaStr = `${Math.ceil(remainingTimeInSeconds)}s remaining`;
+            } else {
+              const minutes = Math.floor(remainingTimeInSeconds / 60);
+              const seconds = Math.ceil(remainingTimeInSeconds % 60);
+              etaStr = `${minutes}m ${seconds}s remaining`;
+            }
+          }
+        }
+
+        setDownloadProgress(progress);
+        setDownloadedBytes(loaded);
+        setDownloadSpeed(speed);
+        setDownloadEta(etaStr);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        const blob = xhr.response;
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileDetails.filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+
+        // Notify parent component so they can trigger global data updates / stat refreshes
+        onDownloadExecuted();
+
+        setIsDownloading(false);
+        downloadXhrRef.current = null;
+
+        if (fileDetails.singleUse) {
+          setFileDetails(null);
+          setKeyInput("");
+          setError("File transfer complete. Single-use package successfully consumed & destroyed from storage.");
+        }
+      } else {
+        setIsDownloading(false);
+        downloadXhrRef.current = null;
+        setError("Download failed. The file may have been consumed, deleted, or is no longer available.");
+      }
+    };
+
+    xhr.onerror = () => {
+      setIsDownloading(false);
+      downloadXhrRef.current = null;
+      setError("An error occurred during file transmission. Please check your internet connection.");
+    };
+
+    xhr.onabort = () => {
+      setIsDownloading(false);
+      downloadXhrRef.current = null;
+    };
+
+    xhr.send();
+  };
+
+  const cancelDownload = () => {
+    if (downloadXhrRef.current) {
+      downloadXhrRef.current.abort();
+      downloadXhrRef.current = null;
     }
   };
 
   const clearAndReset = () => {
+    cancelDownload();
     setKeyInput("");
     setFileDetails(null);
     setError(null);
@@ -251,14 +341,72 @@ export default function DownloadSection({ initialKey = "", onDownloadExecuted }:
               </div>
             )}
 
-            {/* ACTION DIRECT TRIGGER BUTTON */}
-            <button
-              onClick={handleDownload}
-              className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-xl transition-all shadow-md shadow-indigo-100 flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Download className="w-4 h-4 animate-bounce" />
-              <span>Download & Stream Original</span>
-            </button>
+            {isDownloading ? (
+              <div className="space-y-4 p-4 border border-indigo-100 bg-indigo-50/50 rounded-2xl text-left">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <RefreshCcw className="w-3.5 h-3.5 animate-spin" />
+                    Downloading...
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-indigo-600">
+                    {downloadProgress}%
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
+                  <motion.div 
+                    className="h-full bg-indigo-600 rounded-full"
+                    initial={{ width: "0%" }}
+                    animate={{ width: `${downloadProgress}%` }}
+                    transition={{ duration: 0.1 }}
+                  />
+                </div>
+
+                {/* Stats row */}
+                <div className="grid grid-cols-2 gap-3 pt-1 text-xs">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
+                      Downloaded
+                    </span>
+                    <span className="font-mono text-slate-700 font-medium whitespace-nowrap">
+                      {formatBytes(downloadedBytes)} <span className="text-slate-400">/ {formatBytes(fileDetails.size)}</span>
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">
+                      Speed
+                    </span>
+                    <span className="font-mono text-slate-700 font-semibold whitespace-nowrap">
+                      {formatBytes(downloadSpeed)}/s
+                    </span>
+                  </div>
+                </div>
+
+                {/* ETA and Cancel row */}
+                <div className="flex justify-between items-center pt-2 border-t border-slate-200/45 text-xs">
+                  <span className="text-slate-500 font-mono italic">
+                    {downloadEta || "estimating..."}
+                  </span>
+                  <button
+                    onClick={cancelDownload}
+                    className="px-3 py-1.5 text-xs font-semibold text-rose-500 hover:text-white hover:bg-rose-500 border border-slate-200 hover:border-rose-500 rounded-lg transition-all cursor-pointer shadow-2xs"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* ACTION DIRECT TRIGGER BUTTON */
+              <button
+                disabled={isDownloading}
+                onClick={handleDownload}
+                className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-xl transition-all shadow-md shadow-indigo-100 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Download className="w-4 h-4 animate-bounce" />
+                <span>Download & Stream Original</span>
+              </button>
+            )}
 
             {/* Go Back button */}
             <button
