@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Download, FileDown, Search, ArrowRight, CornerDownRight, 
-  AlertCircle, ChevronRight, Clock, RefreshCcw, Landmark, Info
+  AlertCircle, ChevronRight, Clock, RefreshCcw, Landmark, Info,
+  Camera
 } from "lucide-react";
 import { FileTransfer } from "../types";
 import { formatBytes, formatTimeRemaining } from "../lib/format";
 import { getFileIconComponent } from "../lib/fileIcon";
+import QRScanner from "./QRScanner";
 
 interface DownloadSectionProps {
   initialKey?: string;
@@ -19,6 +21,7 @@ export default function DownloadSection({ initialKey = "", onDownloadExecuted }:
   const [error, setError] = useState<string | null>(null);
   const [fileDetails, setFileDetails] = useState<FileTransfer | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<string>("");
+  const [isScanning, setIsScanning] = useState(false);
   const lookupRef = useRef<string>("");
 
   // Real-time transfer download states
@@ -236,37 +239,63 @@ export default function DownloadSection({ initialKey = "", onDownloadExecuted }:
                     value={keyInput}
                     onChange={handleKeyChange}
                     placeholder="E.G. X9BD4T"
-                    className="w-full tracking-[0.25em] font-mono text-center text-xl font-bold uppercase border-2 border-slate-200 focus:border-indigo-500 focus:ring-3 focus:ring-indigo-100 outline-hidden h-14 bg-white rounded-xl text-slate-800 placeholder:text-slate-300 placeholder:tracking-normal transition-all"
+                    className="w-full tracking-[0.25em] font-mono text-center text-xl font-bold uppercase border-2 border-slate-200 focus:border-indigo-500 focus:ring-3 focus:ring-indigo-100 outline-hidden h-14 bg-white rounded-xl text-slate-800 placeholder:text-slate-300 placeholder:tracking-normal transition-all pr-12"
                     maxLength={6}
                     autoFocus
                   />
-                  {keyInput.length === 6 && !loading && (
+                  {keyInput.length === 6 && !loading ? (
                     <button
                       type="submit"
                       className="absolute right-2.5 top-2.5 h-9 w-9 bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-indigo-200 cursor-pointer"
                     >
                       <ArrowRight className="w-4 h-4" />
                     </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsScanning(true)}
+                      className="absolute right-2.5 top-2.5 h-9 w-9 bg-slate-50 hover:bg-slate-100 border border-slate-200/60 text-indigo-600 flex items-center justify-center rounded-lg shadow-2xs transition-all focus:ring-2 focus:ring-indigo-100 cursor-pointer"
+                      title="Scan QR Code"
+                    >
+                      <Camera className="w-4.5 h-4.5 animate-pulse" />
+                    </button>
                   )}
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={loading || keyInput.length !== 6}
-                  className="w-full h-11 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-100 disabled:text-slate-400 text-white font-medium text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer cursor-not-allowed disabled:shadow-none shadow-sm"
-                >
-                  {loading ? (
-                    <>
-                      <RefreshCcw className="w-4 h-4 animate-spin text-indigo-600" />
-                      <span className="text-slate-500">Retrieving Information...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Search className="w-4 h-4" />
-                      <span>Fetch Transfer Info</span>
-                    </>
-                  )}
-                </button>
+                <div className="space-y-3">
+                  <button
+                    type="submit"
+                    disabled={loading || keyInput.length !== 6}
+                    className="w-full h-11 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-100 disabled:text-slate-400 text-white font-medium text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer cursor-not-allowed disabled:shadow-none shadow-sm"
+                  >
+                    {loading ? (
+                      <>
+                        <RefreshCcw className="w-4 h-4 animate-spin text-indigo-600" />
+                        <span className="text-slate-500">Retrieving Information...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-4 h-4" />
+                        <span>Fetch Transfer Info</span>
+                      </>
+                    )}
+                  </button>
+
+                  <div className="flex items-center justify-center gap-2 py-1.5">
+                    <span className="h-[1px] flex-1 bg-slate-100"></span>
+                    <span className="text-[10px] text-slate-300 uppercase tracking-widest font-bold">Or Scan</span>
+                    <span className="h-[1px] flex-1 bg-slate-100"></span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsScanning(true)}
+                    className="w-full h-11 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-semibold text-xs rounded-xl shadow-2xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Camera className="w-4 h-4 text-indigo-600 animate-pulse" />
+                    <span>Scan File QR Code</span>
+                  </button>
+                </div>
               </div>
 
               {/* Input Error states */}
@@ -417,6 +446,18 @@ export default function DownloadSection({ initialKey = "", onDownloadExecuted }:
             </button>
 
           </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {isScanning && (
+          <QRScanner
+            onScanSuccess={(key) => {
+              setKeyInput(key);
+              setIsScanning(false);
+              triggerLookup(key);
+            }}
+            onClose={() => setIsScanning(false)}
+          />
         )}
       </AnimatePresence>
     </div>
