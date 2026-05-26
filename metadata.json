@@ -1,0 +1,6 @@
+{
+  "name": "FileAir",
+  "description": "An elegant, secure, and temporary file sharing system built by RadiumIX Developers. Upload a file to receive a unique FileAir download key, and retrieve files securely. Files are stored temporarily and expire automatically.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
